@@ -1,0 +1,11 @@
+Idx;Outcome;Var1;Var2;Var3;Var4;Var5
+1;Dead;1;NaN;100;1175;NA
+2;Dead;0;90;#IND;1225;15
+3;Survived;N/A;90;90;na;15
+4;Dead;1;IND;N/A;1150;ind
+5;Dead;0;100;90;NA;0
+6;Survived;***;n/a;80;513;Null
+7;Dead;2;70;###;384;10
+8;Dead;2;NaN;80;99999;1
+9;Dead;1;70;80;825;16
+10;Dead;nan;70;null;271;NULL
