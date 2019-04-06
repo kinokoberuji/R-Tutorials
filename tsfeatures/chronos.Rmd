@@ -1,0 +1,345 @@
+---
+title: "Trích xuất feature dữ liệu chuỗi" 
+author: "Lê Ngọc Khả Nhi"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    code_download: true
+    code_folding: hide
+    number_sections: yes
+    theme: "default"
+    toc: TRUE
+    toc_float: TRUE
+    dev: 'svg'
+---
+
+```{r setup,include=FALSE}
+
+knitr::opts_chunk$set(
+  echo=TRUE,
+  warning = FALSE,
+  fig.align = "center"
+)
+
+```
+
+![](chronos.png)
+
+# Giới thiệu 
+
+Chuỗi thời gian (time series), là một cấu trúc dữ liệu gồm nhiều giá trị liên tiếp theo trình tự thời gian. Một cách phổ quát hơn, Nhi thích sử dụng thuật ngữ "chuỗi dữ liệu" (sequence, sequential data) cho bất cứ dữ liệu nào có cấu trúc liên tục và theo trình tự, không bắt buộc phải là những con số và phải có yếu tố thời gian biểu kiến (thí dụ chuỗi sự kiện/trạng thái, văn bản, gen, protein, ... ). 
+
+Trong các bài toán Machine learning, dữ liệu chuỗi có thể được hoán chuyển rất đa dạng ở đầu vào, theo 2 trường phái khác nhau: hoặc trực tiếp sử dụng dữ liệu thô (arrays/tensor từ 1D cho đến 5D) - cách làm này thường gặp trong deep learning (CNN, LSTM, ...) hoặc gián tiếp bằng cách trích xuất các features từ dữ liệu gốc rồi dùng các features này như input data cho những algorithm như SVM, XGBoost hay Random Forest. Bài thực hành hôm nay sẽ bàn về trường phái thứ 2, trích xuất features, với nội dung cụ thể là giới thiệu về R package tsfeatures. Công cụ này cho phép thực hiện rất nhiều quy trình trích xuất features - vốn trước kia chỉ có thể làm bằng Matlab.
+
+Bạn có thể cài đặt bản **chính thức** từ [CRAN](https://cran.r-project.org/web/packages/tsfeatures) như sau:
+
+
+```{r, eval = FALSE}
+# Cài đặt từ CRAN
+install.packages('tsfeatures', dependencies = TRUE)
+```
+
+Bạn cũng có thể cài bản **thử nghiệm** từ [Github](https://github.com/robjhyndman/tsfeatures) như sau:
+
+```{r, eval = FALSE}
+# Cần package "devtools"
+devtools::install_github("robjhyndman/tsfeatures")
+```
+
+# Một vài thí dụ về time series
+
+Sau đây là một số dataset kinh điển giúp các bạn hình dung về time series, 
+
+```{r,message = FALSE,warning=FALSE}
+library(tsfeatures)
+library(tidyverse)
+```
+
+1) Data sunpost : timeseries có yếu tố thời gian biểu kiến (mốc thời gian là năm, tháng, ngày, giờ xác định)
+
+```{r,message = FALSE,warning=FALSE}
+annual_sunpost = read.csv("http://vincentarelbundock.github.io/Rdatasets/csv/datasets/sunspot.year.csv",
+                          row.names = 1)%>%
+  ts(data=.$value,
+     start=min(.$time),
+     end=max(.$time),
+     frequency=1)
+
+head(annual_sunpost,20)
+
+plot(annual_sunpost,type="l",col="red")
+```
+
+2) Dữ liệu AirPassenger: là một thí dụ về time series có yếu tố chu kỳ
+
+```{r,message = FALSE,warning=FALSE}
+airpass = read.csv("http://vincentarelbundock.github.io/Rdatasets/csv/datasets/AirPassengers.csv",
+                   row.names = 1)%>%
+  ts(data=.$value,
+      class="ts",
+      start=1949,end=1960,
+      frequency=12)
+
+airpass
+  
+plot(airpass,type="l",col="blue")
+```
+
+3) Một đoạn tín hiệu điện tim:
+
+Đây là thí dụ về timeseries không có mốc thời gian biểu kiến (có thể chỉ đơn giản là 1 vector số)
+
+```{r,message = FALSE,warning=FALSE}
+ecg = read.csv("ecg0606_1.csv",header = F)%>%as.ts(.$V1)
+
+plot(ecg,type="l",col="black")
+```
+
+4) Dữ liệu chuỗi đa chiều:
+
+8 băng Tín hiệu cảm biến gyro và gia tốc ghi nhận tư thế, chuyển động của cơ thể trong 5 trạng thái giấc ngủ khác nhau: có thể xem như một tensor 3D. 
+
+```{r,message = FALSE,warning=FALSE}
+sleep_df = read.csv("origin_comp.csv")
+
+Awk_df = sleep_df%>%filter(Stade == "Awk")%>%.[c(1:100),]
+N1_df = sleep_df%>%filter(Stade == "N1")%>%.[c(1:100),]
+N2_df = sleep_df%>%filter(Stade == "N2")%>%.[c(1:100),]
+N3_df = sleep_df%>%filter(Stade == "N3")%>%.[c(1:100),]
+Rem_df = sleep_df%>%filter(Stade == "REM")%>%.[c(1:100),]
+
+df=rbind(Awk_df,N1_df,N2_df,N3_df,Rem_df)%>%select(-idx)
+
+df$idx = rep(c(1:100),5)
+
+df%>%gather(1:8,key="band",value="amplitude")%>%
+  ggplot(aes(x=idx,y=amplitude,col=band))+
+  geom_line(alpha=0.6,size=1)+
+  theme_bw(5)+
+  facet_wrap(~Stade, ncol=1, scales="free")
+  
+df%>%gather(1:8,key="band",value="amplitude")%>%
+  ggplot(aes(x=idx,y=amplitude,col=band))+
+  geom_line(alpha=0.6,size=0.8)+
+  theme_bw(8)+
+  facet_grid(band~Stade, scales="free_y")
+```
+
+Hình vẽ trên chỉ mới trình bày 1 phân đoạn ngắn (10 giây tín hiệu với tần số lấy mẫu 10 Hz),khi một chuỗi dài được chia đều thành nhiều phân đoạn, nó sẽ trở thành một tensor/array 4D, thậm chí 5D, bao gồm chiều thời gian. Giả định nếu muốn phân biệt 5 trạng thái giấc ngủ khác nhau (bài toán multiclass classification), ta khó lòng sử dụng trực tiếp dữ liệu gốc, ngay cả bằng mô tả trực quan.Đây là một không gian dữ liệu quá lớn, nhiều thông tin tiềm ẩn bên trong và khó phân tích. Kỹ thuật trích xuất features có thể rút gọn chiều dữ liệu xuống bằng cách sử dụng các chỉ số cho phép mô tả về đặc tính, khuynh hướng của chuỗi dữ liệu gốc, package tsfeatures cung cấp một số hàm tiện lợi để làm việc này.
+
+# Trích xuất feature cho 1 chuỗi bằng hàm chuyên dụng
+
+về mặt kỹ thuật, mỗi chuỗi dữ liệu cơ bản là một vector (1D array) nên ta có thể áp dụng tất cả những hàm thông thường, bao gồm thống kê, tính toán số học, hoán chuyển, ..Nếu hàm này xuất ra kết quả là một con số, kết quả này có thể được xem như một feature,
+
+Thí dụ đơn giản nhất, hàm median cho biết vị trí trung tâm của chuỗi:
+
+```{r,message = FALSE,warning=FALSE}
+median(annual_sunpost)
+
+ggplot(data=annual_sunpost)+
+  geom_point(aes(y=annual_sunpost,x=c(1700:1988)),col="red",alpha=0.5)+
+  geom_line(aes(y=annual_sunpost,x=c(1700:1988)),col="grey",alpha=0.5)+
+  geom_hline(yintercept = median(annual_sunpost), color = "blue", linetype=2)+
+  scale_x_continuous('Year')+
+  theme_bw()
+```
+
+Package tsfeature cung cấp khoảng 30 hàm khác nhau tương ứng với nhiều thuộc tính chuyên biệt cho time series, 
+
+https://cran.r-project.org/web/packages/tsfeatures/vignettes/tsfeatures.html#stl_features
+
+Thí dụ, hàm acf_features cung cấp hệ số tự tương quan và tổng bình phương của 10 autocorrelation coefficients đầu tiên
+
+```{r,message = FALSE,warning=FALSE}
+acf_features(ecg)%>%knitr::kable()
+```
+
+Hàm stl_features trích xuất 8 thuộc tính về trend và seasonality của time series dựa vào phân tích STL decomposition.
+
+```{r,message = FALSE,warning=FALSE}
+stl_features(ecg)%>%knitr::kable()
+```
+
+Hàm heterogeneity trích xuất 4 thuộc tính nhằm khảo sát heterogeneity dựa vào tổng bình phương và R2 của mô hình GARCH và ARCH:
+
+```{r,message = FALSE,warning=FALSE}
+heterogeneity (airpass)%>%knitr::kable()
+```
+
+# Trích xuất features cho hàng loạt chuỗi
+
+Hàm tsfeatures cho phép áp dụng một hay nhiều phương pháp trích xuất features khác nhau cho 1 list gồm nhiều chuỗi khác nhau. Nó làm đơn giản code mà không cần đến vòng lặp, hàm apply hay hàm map. 
+
+Trước hết ta đưa các chuỗi cần xử lý vào 1 list (có thể dùng hàm split trên 1 dataframe), thí dụ ta muốn xử lý 3 chuỗi anorm_raw ở 3 trạng thái Awk, N2 và REM :
+
+```{r,message = FALSE,warning=FALSE}
+ts_list = list(Awk_df$anorm_raw,
+               N2_df$anorm_raw,
+               Rem_df$anorm_raw)
+
+str(ts_list)
+```
+
+Có thể áp dụng 1 hay hàng loạt phương pháp, tên của phương pháp là tên của hàm có trong Environment, có thể là 1 hàm  có sẵn trong package hay 1 hàm đặc biệt do bạn tạo ra:
+
+Thí dụ quy trình sau trích xuất các features: entropy, stability, nonlinearity, lumpiness, crossing_points cho list 3 series:
+
+```{r,message = FALSE,warning=FALSE}
+tsfeatures(ts_list, features = c("entropy","stability","nonlinearity", 
+                                 "lumpiness", "crossing_points"))%>%knitr::kable()
+```
+
+Kết quả xuất ra là 1 data frame, mỗi hàng tương ứng 1 series trong list, mỗi cột là 1 features. Nếu hàm xuất ra nhiều features, chúng sẽ được ghép nối tiếp theo nhiều cột
+
+Như đã nói, ta có thể viết hàm tùy thích, thí dụ Nhi tạo ra 1 hàm có tên là boxcox_stl, nó sẽ làm 1 quy trình phức tạp gồm: chuẩn hóa (scaling) chuỗi thành thang đo 0:1, sau đó hoán chuyển BoxCox, cuối cùng áp dụng phương pháp STL để xuất ra 8 features:
+
+```{r,message = FALSE,warning=FALSE}
+boxcox_stl <- function(x,...) {
+  minmax = (x- min(x)) /(max(x)-min(x))
+  lambda <- forecast::BoxCox.lambda(minmax)
+  y <- forecast::BoxCox(minmax, lambda)
+  c(stl_features(y, s.window='periodic', robust=TRUE), lambda=lambda)
+}
+
+tsfeatures(ts_list, features = 'boxcox_stl')%>%knitr::kable()
+
+```
+
+# Trích xuất features cho dữ liệu chuỗi đa chiều
+
+Ta sẽ làm 1 quy trình phức tạp hơn, thí dụ ta có dataframe sleep_df gồm 8 băng tín hiệu, ghi trong 5 trạng thái giấc ngủ khác nhau, mỗi trạng thái lại được chia thành 10 phân đoạn khác nhau có độ dài 100 mẫu (10 giây, 10Hz), cấu trúc này tương ứng với 1 tensor/array 4D. Ta muốn trích xuất entropy của từng phân đoạn
+
+
+```{r,message = FALSE,warning=FALSE}
+sleep_df$idx = rep(c(1:50),each = 100)
+
+sleep_df%>%sample_n(10)%>%knitr::kable()
+
+sleep_df%>%group_by(idx,Stade)%>%tally()%>%knitr::kable()
+```
+
+Để làm việc này, dự kiến ta phải dùng hàm map và 1 hàm cải biên để làm việc trên list.
+
+Ta tạo ra hàm ent_func, nó sẽ chuyển dataframe nhỏ gồm 8 băng dữ liệu thành 1 list, sau đó áp dụng hàm ts_features (hay trực tiếp hàm entropy cũng được) để trích xuất kết quả entropy cho mỗi băng dữ liệu. 
+
+```{r,message = FALSE,warning=FALSE}
+ent_func = function(.x){
+  ts_list = as.list(.x[,-c(9,10)])
+  out = tsfeatures(ts_list,
+             features="entropy")%>%as.vector()
+  return(out)
+ }
+```
+
+Tiếp theo, ta dùng hàm map_df để chạy hàm ent_func cho từng phân đoạn từ 1 đến 50 (có 50 phân đoạn, mỗi nhóm label có 10 phân đoạn và mỗi phân đoạn dài 100 mẫu) và ghi kết quả trong dataframe out_df
+
+```{r,message = FALSE,warning=FALSE}
+sleep_df%>%split(.$idx)%>%
+  map_df(.,~data_frame(ent=ent_func(.x)%>%.$entropy,
+                       para = colnames(df[,-c(9,10)]),
+                       stade=.x$Stade[[1]]))->out_df
+```
+
+```{r,message = FALSE,warning=FALSE}
+out_df$idx = factor(c(1:50))
+
+out_df%>%sample_n(10)%>%knitr::kable()
+```
+
+Lúc này ta có thể dùng entropy như 1 feature để phân biệt 5 label sleep stades: 
+
+```{r,message = FALSE,warning=FALSE}
+out_df%>%ggplot()+
+  geom_density(aes(x=ent,fill=stade),alpha=0.7)+
+  theme_bw(8)+
+  facet_wrap(~para,ncol=3,scales = "free")
+```
+
+```{r,message = FALSE,warning=FALSE}
+out_df%>%ggplot()+
+  geom_boxplot(aes(x=stade,y=ent,fill=stade),alpha=0.7)+
+  theme_bw(8)+
+  coord_flip()+
+  facet_wrap(~para,ncol=2,scales = "free")
+```
+
+Thay vì xuất 1 features duy nhất là entropy, ta có thể xuất nhiều features hơn, như sau đây - Nhi dùng quy trình stl_features để xuất ra 8 features, sau đó chọn ra 4 là trend,spike,linearity và curvature. Lưu ý, hàm stl_func xuất kết quả là 1 dataframe thay vì vector như hàm ent_func
+
+```{r,message = FALSE,warning=FALSE}
+stl_func = function(.x){
+  ts_list = as.list(.x[,-c(9,10)])
+  out = tsfeatures(ts_list,
+             features="stl_features")
+  return(out)
+ }
+```
+
+Kết hợp hàm split và map_df, ta có thể chạy áp dụng hàm stl_func vừa tạo cho hàng loạt phân đoạn, và lưu kết quả lại thành dataframe out_df2
+
+```{r,message = FALSE,warning=FALSE}
+sleep_df%>%split(.$idx)%>%
+  map_df(.,~stl_func(.x)%>%
+           select(trend,spike,linearity,curvature))->out_df2
+```
+
+```{r}
+out_df2%>%sample_n(10)%>%knitr::kable()
+```
+
+Ta ghép 2 dataframe out_df và out_df2 lại thành 1, lúc này ta có 5 features trong 1 dataframe
+
+```{r,message = FALSE,warning=FALSE}
+stl_out_df = bind_cols(out_df2,out_df)
+```
+
+dataframe này có thể được dùng như input data cho bài toán classfication, hoặc unsupervised learning. 
+
+Ta có thể thăm dò trực quan đặc tính của dữ liệu features bằng heatmap:
+
+```{r,message = FALSE,warning=FALSE}
+library(viridis)
+
+stl_out_df%>%
+  dplyr::select(-c(para,stade,idx))%>%
+  scale(.)%>%
+  as_tibble()%>%
+  mutate(Stade=out_df$stade,
+         Id=factor(rep(c(1:5),80)),
+         para=out_df$para)%>%
+  gather(trend:ent,
+         key="Feature",value="Value")%>%
+  ggplot(aes(x=reorder(Id,Value),
+             y=reorder(Feature,Value),
+             fill=Value))+
+  geom_tile(show.legend=T)+
+  theme_bw(7)+
+  theme(axis.text.y=element_blank(),
+        axis.text.x = element_text(angle =45,hjust=1,vjust=1))+
+  coord_flip()+
+  scale_y_discrete("Features")+
+  scale_x_discrete("Fragments",breaks=NULL)+
+  facet_grid(Stade~para,shrink = T)+
+  scale_fill_viridis(option="A",begin=1,end=0)
+```
+
+Hoặc bằng violin plot
+
+```{r,message = FALSE,warning=FALSE}
+stl_out_df%>%
+  dplyr::select(-c(para,stade,idx))%>%
+  scale(.)%>%
+  as_tibble()%>%
+  mutate(stade=out_df$stade,
+         para=out_df$para)%>%
+  gather(1:5,key="Feature",value="Value")%>%
+  ggplot()+
+  geom_violin(aes(x=stade,y=Value,fill=stade),alpha=0.5)+
+  facet_grid(Feature~para)+
+  theme_bw(7)+
+  theme(axis.text.y=element_blank(),
+        axis.text.x = element_text(angle =45,hjust=1,vjust=1))
+```
+
+# Tổng kết
+
+Bài thực hành đến đây là hết, Nhi hy vọng package tsfeature sẽ mang lại nhiều tiên ích cho các bạn nghiên cứu sinh khi làm việc với dữ liệu chuỗi. Chúc các bạn thực hành vui và hẹn gặp lại.
